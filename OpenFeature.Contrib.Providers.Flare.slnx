@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OpenFeature.Contrib.Providers.Flare/OpenFeature.Contrib.Providers.Flare.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+  </Folder>
+</Solution>
