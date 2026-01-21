@@ -1,7 +1,7 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Flare.Extensions.Configuration\Flare.Extensions.Configuration.csproj"/>
     <Project Path="src/OpenFeature.Contrib.Providers.Flare/OpenFeature.Contrib.Providers.Flare.csproj" />
   </Folder>
-  <Folder Name="/tests/">
-  </Folder>
+  <Folder Name="/tests/" />
 </Solution>
