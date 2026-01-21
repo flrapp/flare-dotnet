@@ -59,7 +59,7 @@ public static class ServiceCollectionExtensions
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddFlareProvider(
         this IServiceCollection services,
-        FlareProviderOptions options)
+        FlareApiClientOptions options)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));
@@ -87,7 +87,7 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configuration));
 
         var section = configuration.GetSection(sectionName);
-        var options = new FlareProviderOptions()
+        var options = new FlareApiClientOptions()
         {
             BaseUrl = section["BaseUrl"] ?? string.Empty,
             ApiKey = section["ApiKey"] ?? string.Empty,
@@ -97,7 +97,7 @@ public static class ServiceCollectionExtensions
         return services.AddFlareProviderCore(options);
     }
 
-    private static IServiceCollection AddFlareProviderCore(this IServiceCollection services, FlareProviderOptions options)
+    private static IServiceCollection AddFlareProviderCore(this IServiceCollection services, FlareApiClientOptions options)
     {
         services.AddHttpClient<IFlareApiClient, FlareApiClient>()
             .ConfigureHttpClient((sp, client) =>

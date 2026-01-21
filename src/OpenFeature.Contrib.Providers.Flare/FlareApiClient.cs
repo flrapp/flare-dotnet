@@ -18,7 +18,6 @@ public class FlareApiClient : IFlareApiClient
     private const string EvaluateAllEndpoint = "/sdk/v1/flags/evaluate-all";
 
     private readonly HttpClient _httpClient;
-    private readonly ILogger<FlareApiClient> _logger;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -26,30 +25,27 @@ public class FlareApiClient : IFlareApiClient
     };
 
     public FlareApiClient(
-        HttpClient httpClient,
-        ILogger<FlareApiClient> logger)
+        HttpClient httpClient)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+    
 
-    public async Task<IReadOnlyList<FlagEvaluationResponse>> EvaluateAllAsync(
-        EvaluationContext context,
+    public async Task<IReadOnlyList<FlagEvaluationResponse>> EvaluateAllAsync(string scope,
         CancellationToken cancellationToken = default)
     {
         var request = new FlareEvaluateAllRequest
         {
-            Context = BuildEvaluationContext(context)
+            Context = new FlareEvaluationContext()
+            {
+                Scope = scope
+            }
         };
-
-        _logger.LogDebug("Evaluating all flags for scope {Scope}", request.Context?.Scope);
 
         var json = JsonSerializer.Serialize(request, JsonOptions);
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, EvaluateAllEndpoint)
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json")
-        };
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, EvaluateAllEndpoint);
+        httpRequest.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
         using var httpResponse = await _httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
 
@@ -62,8 +58,6 @@ public class FlareApiClient : IFlareApiClient
         {
             throw new JsonException("Failed to deserialize evaluate-all response");
         }
-
-        _logger.LogDebug("Received {Count} flag evaluations", response.Flags.Count);
 
         return response.Flags;
     }
@@ -84,14 +78,10 @@ public class FlareApiClient : IFlareApiClient
             Context = BuildEvaluationContext(context)
         };
 
-        _logger.LogDebug("Evaluating flag {FlagKey} for scope {Scope}", flagKey, request.Context?.Scope);
-
         var json = JsonSerializer.Serialize(request, JsonOptions);
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, EvaluateEndpoint)
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json")
-        };
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, EvaluateEndpoint);
+        httpRequest.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
         using var httpResponse = await _httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
 
@@ -105,28 +95,26 @@ public class FlareApiClient : IFlareApiClient
             throw new JsonException("Failed to deserialize evaluate response");
         }
 
-        _logger.LogDebug("Flag {FlagKey} evaluated to {Value} with reason {Reason}",
-            flagKey, response.Value, response.Reason);
-
         return response;
     }
 
-    private FlareEvaluationContext BuildEvaluationContext(EvaluationContext? context)
+    private FlareEvaluationContext BuildEvaluationContext(EvaluationContext context)
     {
         var flareContext = new FlareEvaluationContext
         {
             Scope = "dev"
         };
 
-        if (context != null)
-        {
-            flareContext.TargetingKey = context.TargetingKey;
+        flareContext.TargetingKey = context.TargetingKey;
 
-            var scopeValue = context.GetValue("scope");
-            if (scopeValue != null && !string.IsNullOrEmpty(scopeValue.AsString))
-            {
-                flareContext.Scope = scopeValue.AsString;
-            }
+        var scopeValue = context.GetValue("scope");
+        if (!string.IsNullOrEmpty(scopeValue.AsString))
+        {
+            flareContext.Scope = scopeValue.AsString;
+        }
+        else
+        {
+            throw new ArgumentException("Scope cannot be null or empty.", nameof(context));
         }
 
         return flareContext;
@@ -158,8 +146,6 @@ public class FlareApiClient : IFlareApiClient
             HttpStatusCode.NotFound => $"Not found: {responseBody ?? "Resource not found"}",
             _ => $"API error ({(int)statusCode}): {responseBody ?? response.ReasonPhrase}"
         };
-
-        _logger.LogError("Flare API error: {StatusCode} - {Message}", (int)statusCode, message);
 
         throw new FlareApiException(statusCode, message);
     }

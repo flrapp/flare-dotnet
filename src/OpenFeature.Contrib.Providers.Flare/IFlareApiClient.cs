@@ -12,14 +12,12 @@ public interface IFlareApiClient
     /// Evaluates all flags for the given context.
     /// Calls POST /sdk/v1/flags/evaluate-all
     /// </summary>
-    /// <param name="context">The evaluation context containing scope and targeting key.</param>
+    /// <param name="scope">Scope of project</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A list of all flag evaluation responses.</returns>
     /// <exception cref="System.Net.Http.HttpRequestException">Thrown for network errors.</exception>
     /// <exception cref="FlareApiException">Thrown for API errors (400, 401, 404).</exception>
-    Task<IReadOnlyList<FlagEvaluationResponse>> EvaluateAllAsync(
-        EvaluationContext context,
-        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<FlagEvaluationResponse>> EvaluateAllAsync(string scope,CancellationToken cancellationToken);
 
     /// <summary>
     /// Evaluates a single flag for the given context.
@@ -29,6 +27,7 @@ public interface IFlareApiClient
     /// <param name="context">The evaluation context containing scope and targeting key.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The flag evaluation response.</returns>
+    /// <exception cref="System.ArgumentNullException">Thrown when scope does not provide</exception>
     /// <exception cref="System.Net.Http.HttpRequestException">Thrown for network errors.</exception>
     /// <exception cref="FlareApiException">Thrown for API errors (400, 401, 404).</exception>
     Task<FlagEvaluationResponse> EvaluateAsync(

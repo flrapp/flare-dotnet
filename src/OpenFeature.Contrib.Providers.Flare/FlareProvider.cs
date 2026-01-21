@@ -24,7 +24,7 @@ public sealed class FlareProvider : FeatureProvider
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _logger = logger ?? NullLogger<FlareProvider>.Instance;
     }
-
+    
     public override Metadata? GetMetadata() => ProviderMetadata;
 
     public override async Task<ResolutionDetails<bool>> ResolveBooleanValueAsync(
@@ -35,7 +35,8 @@ public sealed class FlareProvider : FeatureProvider
     {
         try
         {
-            var response = await _apiClient.EvaluateAsync(flagKey, context ?? EvaluationContext.Empty, cancellationToken).ConfigureAwait(false);
+            
+            var response = await _apiClient.EvaluateAsync(flagKey, context, cancellationToken).ConfigureAwait(false);
 
             return new ResolutionDetails<bool>(
                 flagKey: flagKey,
