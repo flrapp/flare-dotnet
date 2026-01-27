@@ -12,10 +12,9 @@ using OpenFeature.Model;
 
 namespace OpenFeature.Contrib.Providers.Flare;
 
-public class FlareApiClient : IFlareApiClient
+internal class FlareApiClient : IFlareApiClient
 {
     private const string EvaluateEndpoint = "/sdk/v1/flags/evaluate";
-    private const string EvaluateAllEndpoint = "/sdk/v1/flags/evaluate-all";
 
     private readonly HttpClient _httpClient;
 
@@ -31,40 +30,9 @@ public class FlareApiClient : IFlareApiClient
     }
     
 
-    public async Task<IReadOnlyList<FlagEvaluationResponse>> EvaluateAllAsync(string scope,
-        CancellationToken cancellationToken = default)
-    {
-        var request = new FlareEvaluateAllRequest
-        {
-            Context = new FlareEvaluationContext()
-            {
-                Scope = scope
-            }
-        };
-
-        var json = JsonSerializer.Serialize(request, JsonOptions);
-
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, EvaluateAllEndpoint);
-        httpRequest.Content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        using var httpResponse = await _httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
-
-        await EnsureSuccessAsync(httpResponse, cancellationToken).ConfigureAwait(false);
-
-        var responseContent = await httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
-        var response = JsonSerializer.Deserialize<FlareEvaluateAllResponse>(responseContent, JsonOptions);
-
-        if (response?.Flags == null)
-        {
-            throw new JsonException("Failed to deserialize evaluate-all response");
-        }
-
-        return response.Flags;
-    }
-
     public async Task<FlagEvaluationResponse> EvaluateAsync(
         string flagKey,
-        EvaluationContext context,
+        EvaluationContext? context,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(flagKey))
@@ -98,7 +66,7 @@ public class FlareApiClient : IFlareApiClient
         return response;
     }
 
-    private FlareEvaluationContext BuildEvaluationContext(EvaluationContext context)
+    private FlareEvaluationContext BuildEvaluationContext(EvaluationContext? context)
     {
         var flareContext = new FlareEvaluationContext
         {

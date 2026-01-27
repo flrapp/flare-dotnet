@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using OpenFeature.Contrib.Providers.Flare.Models;
@@ -8,17 +7,6 @@ namespace OpenFeature.Contrib.Providers.Flare;
 
 public interface IFlareApiClient
 {
-    /// <summary>
-    /// Evaluates all flags for the given context.
-    /// Calls POST /sdk/v1/flags/evaluate-all
-    /// </summary>
-    /// <param name="scope">Scope of project</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A list of all flag evaluation responses.</returns>
-    /// <exception cref="System.Net.Http.HttpRequestException">Thrown for network errors.</exception>
-    /// <exception cref="FlareApiException">Thrown for API errors (400, 401, 404).</exception>
-    Task<IReadOnlyList<FlagEvaluationResponse>> EvaluateAllAsync(string scope,CancellationToken cancellationToken);
-
     /// <summary>
     /// Evaluates a single flag for the given context.
     /// Calls POST /sdk/v1/flags/evaluate
