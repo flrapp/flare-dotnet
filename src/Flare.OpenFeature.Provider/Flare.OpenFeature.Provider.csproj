@@ -8,7 +8,7 @@
     <Description>OpenFeature provider for Flare feature flag system</Description>
     <Version>10.0.0-alpha</Version>
     <Company>Flare</Company>
-    <RepositoryUrl>https://github.com/flrapp/flare-dotnet-provider</RepositoryUrl>
+    <RepositoryUrl>https://github.com/flrapp/flare-dotnet</RepositoryUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
