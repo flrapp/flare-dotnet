@@ -17,7 +17,6 @@ public class FlareConfigurationProvider : ConfigurationProvider, IDisposable
     private readonly HttpClient _httpClient;
     private Timer? _reloadTimer;
     private readonly ILogger _logger;
-    private readonly ILoggerFactory? _loggerFactory;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -32,13 +31,13 @@ public class FlareConfigurationProvider : ConfigurationProvider, IDisposable
             BaseAddress = new Uri(_source.Options.ServerUrl)
         };
         _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_source.Options.ApiKey}");
-        _loggerFactory = LoggerFactory.Create(builder =>
+        var loggerFactory = LoggerFactory.Create(builder =>
         {
             builder.AddConsole();
             builder.SetMinimumLevel(LogLevel.Information);
         });
         
-        _logger = _loggerFactory.CreateLogger<FlareConfigurationProvider>();
+        _logger = loggerFactory.CreateLogger<FlareConfigurationProvider>();
         
     }
 
@@ -46,12 +45,12 @@ public class FlareConfigurationProvider : ConfigurationProvider, IDisposable
     {
         try
         {
-            LoadAsync().GetAwaiter().GetResult();
+            LoadAsync().ConfigureAwait(false).GetAwaiter().GetResult();
         
             if (_source.Options.ReloadInterval > TimeSpan.Zero)
             {
                 _reloadTimer = new Timer(
-                    _ => Load(),
+                    _ => Reload(),
                     null,
                     _source.Options.ReloadInterval,
                     _source.Options.ReloadInterval
@@ -61,13 +60,13 @@ public class FlareConfigurationProvider : ConfigurationProvider, IDisposable
         catch (Exception e)
         {
             _logger.LogError(e, "Failed to load FlareConfiguration");
-            throw;
         }
         
     }
 
     private async Task LoadAsync()
     {
+        
         var request = new
         {
             Context = new
@@ -79,29 +78,42 @@ public class FlareConfigurationProvider : ConfigurationProvider, IDisposable
         var json = JsonSerializer.Serialize(request, JsonOptions);
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/sdk/v1/flags/evaluate-all");
         httpRequest.Content = new StringContent(json, Encoding.UTF8, "application/json");
-        
+    
         using var httpResponse = await _httpClient.SendAsync(httpRequest).ConfigureAwait(false);
         httpResponse.EnsureSuccessStatusCode();
 
         var responseContent = await httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
         var result = JsonSerializer.Deserialize<BulkEvaluationResponseModel>(responseContent, JsonOptions);
-        
+    
         if (result?.Flags == null) return;
 
         var data = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-        
+    
         foreach (var flag in result.Flags)
         {
             data[$"{_source.Options.FeatureFlagSection}:{flag.FlagKey}"] = flag.Value.ToString().ToLowerInvariant();
         }
 
         Data = data;
+
+    }
+
+    private void Reload()
+    {
+        try
+        {
+            LoadAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            OnReload();
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Failed to reload FlareConfiguration");
+        }
     }
 
     public void Dispose()
     {
         _reloadTimer?.Dispose();
         _httpClient.Dispose();
-        _loggerFactory?.Dispose();
     }
 }
