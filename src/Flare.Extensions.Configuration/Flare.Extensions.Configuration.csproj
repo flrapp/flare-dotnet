@@ -6,7 +6,7 @@
         <Nullable>enable</Nullable>
         <PackageId>Flare.Extensions.Configuration</PackageId>
         <Description>Configuration provider for Flare feature flags. Load and auto-reload feature flags as configuration values.</Description>
-        <Version>10.0.2-alpha</Version>
+        <Version>10.0.3-alpha</Version>
         <Company>Flare</Company>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
