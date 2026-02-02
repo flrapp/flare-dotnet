@@ -12,40 +12,68 @@ dotnet add package Flare.Extensions.Configuration
 var builder = WebApplication.CreateBuilder(args);
 
 // Add Flare configuration provider
-builder.Configuration.AddFlare(options =>
+builder.Configuration.AddFlareConfiguration();
+
+// Add the background service that polls for flag updates
+builder.Services.AddFlareBackgroundService(options =>
 {
     options.ServerUrl = "https://flare.example.com";
     options.ApiKey = "your-api-key";
-    options.ProjectAlias = "my-project";
     options.ScopeAlias = "production";
+    options.ReloadInterval = TimeSpan.FromMinutes(5);
 });
 
 var app = builder.Build();
 
 // Access feature flags through IConfiguration
-var isEnabled = app.Configuration.GetValue("FeatureFlags:new-feature");
+var isEnabled = app.Configuration.GetValue<bool>("FeatureFlags:new-feature");
+```
+
+## Configuration from appsettings.json
+
+You can also configure the provider using a configuration section:
+
+```json
+{
+  "Flare": {
+    "ServerUrl": "https://flare.example.com",
+    "ApiKey": "your-api-key",
+    "ScopeAlias": "production",
+    "ReloadInterval": "00:05:00",
+    "FeatureFlagSection": "FeatureFlags"
+  }
+}
+```
+
+```csharp
+builder.Configuration.AddFlareConfiguration();
+builder.Services.AddFlareBackgroundService(builder.Configuration, "Flare");
 ```
 
 ## Configuration Options
-```csharp
-builder.Configuration.AddFlare(options =>
-{
-    options.ServerUrl = "https://flare.example.com";  // Required: Flare server URL
-    options.ApiKey = "your-api-key";                  // Required: Project API key
-    options.ProjectAlias = "my-project";              // Required: Project alias
-    options.ScopeAlias = "production";                // Required: Scope (environment)
-    options.ReloadInterval = TimeSpan.FromMinutes(5); // Optional: Auto-reload interval
-    options.Optional = true;                          // Optional: Don't fail if server unavailable
-});
-```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ServerUrl` | string | Required | Flare server URL |
+| `ApiKey` | string | Required | Project API key |
+| `ScopeAlias` | string | Required | Scope/environment (e.g., "production", "staging") |
+| `ReloadInterval` | TimeSpan | `TimeSpan.Zero` | Interval for polling flag updates |
+| `FeatureFlagSection` | string | `"FeatureFlags"` | Configuration section prefix for flags |
+
+## How It Works
+
+1. `AddFlareConfiguration()` registers a configuration provider that listens for flag updates
+2. `AddFlareBackgroundService()` starts a hosted service that periodically fetches flags from the Flare API
+3. Flags are exposed under the configured section (default: `FeatureFlags:{flag-key}`)
+4. Configuration change tokens allow `IOptionsSnapshot<T>` and `IOptionsMonitor<T>` to react to updates
 
 ## Features
 
-- ✅ **ASP.NET Core integration** - Works seamlessly with `IConfiguration`
-- ✅ **Auto-reload** - Periodically refresh feature flags without restart
-- ✅ **Multi-environment** - Support for dev, staging, production scopes
-- ✅ **Optional loading** - Graceful degradation if Flare server unavailable
-- ✅ **Logging support** - Built-in logging for monitoring
+- ASP.NET Core integration - Works seamlessly with `IConfiguration`
+- Auto-reload - Background service periodically refreshes feature flags
+- Multi-environment - Support for dev, staging, production scopes via `ScopeAlias`
+- Change notifications - Triggers `IOptionsMonitor<T>` callbacks on flag updates
+- Logging support - Built-in logging for monitoring reload operations
 
 ## License
 
