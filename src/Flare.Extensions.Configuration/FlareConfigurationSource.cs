@@ -2,12 +2,11 @@
 
 namespace Flare.Extensions.Configuration;
 
-public class FlareConfigurationSource : IConfigurationSource
+public class FlareConfigurationSource(FlareConfigurationObserver observer) : IConfigurationSource
 {
-    public FlareConfigurationOptions Options { get; set; } = new();
-
+    
     public IConfigurationProvider Build(IConfigurationBuilder builder)
     {
-        return new FlareConfigurationProvider(this);
+        return new FlareConfigurationProvider(observer);
     }
 }

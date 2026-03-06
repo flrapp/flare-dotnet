@@ -1,27 +1,51 @@
 ﻿using System;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Flare.Extensions.Configuration;
 
 public static class FlareConfigurationExtensions
 {
-    public static IConfigurationBuilder AddFlare(
-        this IConfigurationBuilder builder,
+    public static IConfigurationBuilder AddFlareConfiguration(
+        this IConfigurationBuilder builder)
+    {
+        var source = new FlareConfigurationSource(FlareConfigurationObserver.Instance);
+        return builder.Add(source);
+    }
+
+    public static IServiceCollection AddFlareBackgroundService(this IServiceCollection services, IConfiguration configuration, string flareOptionsSection)
+    {
+        services.Configure<FlareConfigurationOptions>(configuration.GetSection(flareOptionsSection));
+
+        services.AddSingleton(FlareConfigurationObserver.Instance);
+        services.AddHttpClient("FlareFeatureToggle", (sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<FlareConfigurationOptions>>().Value;
+            client.BaseAddress = new Uri(options.ServerUrl);
+            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {options.ApiKey}");
+        });
+        
+        services.AddHostedService<FlareBackgroundService>();
+
+        return services;
+    }
+    
+    public static IServiceCollection AddFlareBackgroundService(this IServiceCollection services, 
         Action<FlareConfigurationOptions> configure)
     {
-        var source = new FlareConfigurationSource();
-        configure(source.Options);
+        services.Configure(configure);
         
-        if (string.IsNullOrWhiteSpace(source.Options.ServerUrl))
-            throw new ArgumentException("ServerUrl is required", nameof(FlareConfigurationOptions.ServerUrl));
+        services.AddSingleton(FlareConfigurationObserver.Instance);
+        services.AddHttpClient("FlareFeatureToggle", (sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<FlareConfigurationOptions>>().Value;
+            client.BaseAddress = new Uri(options.ServerUrl);
+            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {options.ApiKey}");
+        });
+        
+        services.AddHostedService<FlareBackgroundService>();
 
-        if (string.IsNullOrWhiteSpace(source.Options.ApiKey))
-            throw new ArgumentException("ApiKey is required", nameof(FlareConfigurationOptions.ApiKey));
-
-        if (string.IsNullOrWhiteSpace(source.Options.ScopeAlias))
-            throw new ArgumentException("ScopeAlias is required", nameof(FlareConfigurationOptions.ScopeAlias));
-
-        return builder.Add(source);
+        return services;
     }
 }
