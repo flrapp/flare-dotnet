@@ -1,0 +1,30 @@
+name: Release Flare OpenFeature Provider
+
+on:
+  push:
+    tags:
+      - 'release/flare-openfeature-provider/*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (x.y.z)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    environment: nuget-publish
+    steps:
+      - run: echo "Approved"
+  publish:
+    needs: gate
+    uses: flrapp/.github/.github/workflows/nuget-publish.yml@main
+    with:
+      project-path: ./src/Flare.OpenFeature.Provider/Flare.OpenFeature.Provider.csproj
+      version: ${{ inputs.version }}
+    secrets:
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
