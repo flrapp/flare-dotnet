@@ -1,27 +1,33 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Flare.HttpClient;
+using Flare.HttpClient.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using OpenFeature;
 using OpenFeature.Constant;
-using OpenFeature.Contrib.Providers.Flare.Models;
 using OpenFeature.Model;
 
-namespace OpenFeature.Contrib.Providers.Flare;
+namespace Flare.OpenFeature.Provider;
 
 public sealed class FlareProvider : FeatureProvider
 {
     private static readonly Metadata ProviderMetadata = new("Flare Provider");
 
     private readonly IFlareApiClient _apiClient;
+    private readonly FlareApiClientOptions _options;
     private readonly ILogger<FlareProvider> _logger;
 
-    public FlareProvider(IFlareApiClient apiClient, ILogger<FlareProvider>? logger = null)
+    public FlareProvider(IFlareApiClient apiClient, IOptions<FlareApiClientOptions> options,ILogger<FlareProvider>? logger = null)
     {
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        _options = options.Value;
         _logger = logger ?? NullLogger<FlareProvider>.Instance;
     }
     
@@ -35,8 +41,15 @@ public sealed class FlareProvider : FeatureProvider
     {
         try
         {
-            
-            var response = await _apiClient.EvaluateAsync(flagKey, context, cancellationToken).ConfigureAwait(false);
+            var flareContext = new FlareEvaluationContext
+            {
+                Scope = _options.Scope,
+                TargetingKey = context?.TargetingKey,
+                Attributes = context?.AsDictionary()
+                    .ToDictionary(x => x.Key, y => y.Value?.AsString)
+            };
+
+            var response = await _apiClient.EvaluateAsync(flagKey, flareContext, cancellationToken).ConfigureAwait(false);
 
             return new ResolutionDetails<bool>(
                 flagKey: flagKey,

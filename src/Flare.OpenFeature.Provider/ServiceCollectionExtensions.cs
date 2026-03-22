@@ -1,14 +1,10 @@
 using System;
-using System.Net.Http;
-using System.Net.Http.Headers;
+using Flare.HttpClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using OpenFeature.Model;
+using OpenFeature;
 
-namespace OpenFeature.Contrib.Providers.Flare;
+namespace Flare.OpenFeature.Provider;
 
 /// <summary>
 /// Extension methods for registering Flare OpenFeature provider in the DI container.
@@ -99,25 +95,13 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddFlareProviderCore(this IServiceCollection services, FlareApiClientOptions options)
     {
-        services.AddHttpClient<IFlareApiClient, FlareApiClient>()
-            .ConfigureHttpClient((sp, client) =>
-            {
-                if (string.IsNullOrWhiteSpace(options.BaseUrl))
-                    throw new InvalidOperationException("FlareProviderOptions.BaseUrl is required.");
-                if (string.IsNullOrWhiteSpace(options.ApiKey))
-                    throw new InvalidOperationException("FlareProviderOptions.ApiKey is required.");
-
-                client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/'));
-                client.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer", options.ApiKey);
-                client.Timeout = TimeSpan.FromSeconds(30);
-            });
+        services.AddFlareHttpClient(options);
 
         services.AddSingleton<FlareProvider>();
-        
+
         services.AddOpenFeature(builder =>
         {
-            builder.AddProvider(sp => sp.GetRequiredService<FlareProvider>());
+            builder.AddProvider(sp => ServiceProviderServiceExtensions.GetRequiredService<FlareProvider>(sp));
             builder.AddContext(contextBuilder => contextBuilder
                 .Set("scope", options.Scope)
                 .Build());

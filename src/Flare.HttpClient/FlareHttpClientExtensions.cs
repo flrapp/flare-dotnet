@@ -1,6 +1,7 @@
 using System;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Flare.HttpClient;
 
@@ -19,14 +20,21 @@ public static class FlareHttpClientExtensions
         if (options == null)
             throw new ArgumentNullException(nameof(options));
 
+        if (string.IsNullOrWhiteSpace(options.BaseUrl))
+            throw new InvalidOperationException("FlareApiClientOptions.BaseUrl is required.");
+        if (string.IsNullOrWhiteSpace(options.ApiKey))
+            throw new InvalidOperationException("FlareApiClientOptions.ApiKey is required.");
+
+        services.AddOptions<FlareApiClientOptions>().Configure(o =>
+        {
+            o.BaseUrl = options.BaseUrl;
+            o.ApiKey  = options.ApiKey;
+            o.Scope   = options.Scope;
+        });
+
         services.AddHttpClient<IFlareApiClient, FlareApiClient>()
             .ConfigureHttpClient((_, client) =>
             {
-                if (string.IsNullOrWhiteSpace(options.BaseUrl))
-                    throw new InvalidOperationException("FlareApiClientOptions.BaseUrl is required.");
-                if (string.IsNullOrWhiteSpace(options.ApiKey))
-                    throw new InvalidOperationException("FlareApiClientOptions.ApiKey is required.");
-
                 client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/'));
                 client.DefaultRequestHeaders.Authorization =
                     new AuthenticationHeaderValue("Bearer", options.ApiKey);

@@ -12,5 +12,5 @@ public sealed class FlareEvaluationContext
     public string? TargetingKey { get; set; }
     
     [JsonPropertyName("attributes")]
-    public Dictionary<string, string> Attributes { get; set; } = new();
+    public Dictionary<string, string?>? Attributes { get; set; } = new();
 }
