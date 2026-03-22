@@ -8,5 +8,7 @@
     <Project Path="src/Flare.Extensions.Configuration\Flare.Extensions.Configuration.csproj" />
     <Project Path="src\Flare.OpenFeature.Provider\Flare.OpenFeature.Provider.csproj" />
   </Folder>
-  <Folder Name="/tests/" />
+  <Folder Name="/tests/">
+    <Project Path="tests/Flare.OpenFeature.Provider.Tests/Flare.OpenFeature.Provider.Tests.csproj" />
+  </Folder>
 </Solution>
