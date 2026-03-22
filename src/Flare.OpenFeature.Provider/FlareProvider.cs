@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using OpenFeature;
 using OpenFeature.Constant;
+using OpenFeature.Error;
 using OpenFeature.Model;
 
 namespace Flare.OpenFeature.Provider;
@@ -52,7 +53,7 @@ public sealed class FlareProvider : FeatureProvider
 
         try
         {
-            var flareContext = BuildFlareContext(context);
+            var flareContext = EvaluationContextConverter.ToFlareContext(context, _options.Scope);
             var response = await _apiClient.EvaluateAllAsync(flareContext, cancellationToken).ConfigureAwait(false);
             _cache.Update(response.Flags, _options.Scope);
             _logger.LogInformation("Flare provider initialized with {FlagCount} flags cached", response.Flags.Count);
@@ -106,8 +107,7 @@ public sealed class FlareProvider : FeatureProvider
                 );
             }
 
-            return CreateErrorResult(flagKey, defaultValue, ErrorType.FlagNotFound,
-                $"Flag '{flagKey}' not found in cache");
+            throw new FlagNotFoundException($"Flag '{flagKey}' not found in cache");
         }
 
         return await EvaluateDirectAsync(flagKey, defaultValue, context, cancellationToken).ConfigureAwait(false);
@@ -119,7 +119,7 @@ public sealed class FlareProvider : FeatureProvider
         EvaluationContext? context = null,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(CreateTypeMismatchResult(flagKey, defaultValue));
+        throw new TypeMismatchException("Flare provider only supports boolean flag evaluation");
     }
 
     public override Task<ResolutionDetails<int>> ResolveIntegerValueAsync(
@@ -128,7 +128,7 @@ public sealed class FlareProvider : FeatureProvider
         EvaluationContext? context = null,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(CreateTypeMismatchResult(flagKey, defaultValue));
+        throw new TypeMismatchException("Flare provider only supports boolean flag evaluation");
     }
 
     public override Task<ResolutionDetails<double>> ResolveDoubleValueAsync(
@@ -137,7 +137,7 @@ public sealed class FlareProvider : FeatureProvider
         EvaluationContext? context = null,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(CreateTypeMismatchResult(flagKey, defaultValue));
+        throw new TypeMismatchException("Flare provider only supports boolean flag evaluation");
     }
 
     public override Task<ResolutionDetails<Value>> ResolveStructureValueAsync(
@@ -146,7 +146,7 @@ public sealed class FlareProvider : FeatureProvider
         EvaluationContext? context = null,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(CreateTypeMismatchResult(flagKey, defaultValue));
+        throw new TypeMismatchException("Flare provider only supports boolean flag evaluation");
     }
 
     private void StartPollTimer()
@@ -239,7 +239,7 @@ public sealed class FlareProvider : FeatureProvider
     {
         try
         {
-            var flareContext = BuildFlareContext(context);
+            var flareContext = EvaluationContextConverter.ToFlareContext(context, _options.Scope);
             var response = await _apiClient.EvaluateAsync(flagKey, flareContext, cancellationToken).ConfigureAwait(false);
 
             return new ResolutionDetails<bool>(
@@ -255,17 +255,17 @@ public sealed class FlareProvider : FeatureProvider
         catch (FlareApiException ex)
         {
             _logger.LogError(ex, "API error evaluating flag {FlagKey}: {StatusCode}", flagKey, ex.StatusCode);
-            return CreateErrorResult(flagKey, defaultValue, ErrorType.General, ex.Message);
+            throw new GeneralException($"Flare API error: {ex.Message}", ex);
         }
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "HTTP error evaluating flag {FlagKey}", flagKey);
-            return CreateErrorResult(flagKey, defaultValue, ErrorType.ProviderNotReady, ex.Message);
+            throw new ProviderNotReadyException($"HTTP error: {ex.Message}", ex);
         }
         catch (JsonException ex)
         {
             _logger.LogError(ex, "JSON parsing error for flag {FlagKey}", flagKey);
-            return CreateErrorResult(flagKey, defaultValue, ErrorType.ParseError, ex.Message);
+            throw new ParseErrorException($"Failed to parse response for flag '{flagKey}'", ex);
         }
         catch (TaskCanceledException ex) when (ex.CancellationToken == cancellationToken)
         {
@@ -275,24 +275,17 @@ public sealed class FlareProvider : FeatureProvider
         catch (TaskCanceledException ex)
         {
             _logger.LogError(ex, "Timeout evaluating flag {FlagKey}", flagKey);
-            return CreateErrorResult(flagKey, defaultValue, ErrorType.ProviderNotReady, "Request timeout");
+            throw new ProviderNotReadyException("Request timeout", ex);
+        }
+        catch (FeatureProviderException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error evaluating flag {FlagKey}", flagKey);
-            return CreateErrorResult(flagKey, defaultValue, ErrorType.General, ex.Message);
+            throw new GeneralException($"Unexpected error evaluating flag '{flagKey}'", ex);
         }
-    }
-
-    private FlareEvaluationContext BuildFlareContext(EvaluationContext? context)
-    {
-        return new FlareEvaluationContext
-        {
-            Scope = _options.Scope,
-            TargetingKey = context?.TargetingKey,
-            Attributes = context?.AsDictionary()
-                .ToDictionary(x => x.Key, y => y.Value?.AsString)
-        };
     }
 
     private static string MapReason(string? reason)
@@ -331,25 +324,4 @@ public sealed class FlareProvider : FeatureProvider
         return new ImmutableMetadata(dict);
     }
 
-    private static ResolutionDetails<T> CreateErrorResult<T>(string flagKey, T defaultValue, ErrorType errorType, string? errorMessage)
-    {
-        return new ResolutionDetails<T>(
-            flagKey: flagKey,
-            value: defaultValue,
-            reason: Reason.Error,
-            errorType: errorType,
-            errorMessage: errorMessage
-        );
-    }
-
-    private static ResolutionDetails<T> CreateTypeMismatchResult<T>(string flagKey, T defaultValue)
-    {
-        return new ResolutionDetails<T>(
-            flagKey: flagKey,
-            value: defaultValue,
-            reason: Reason.Error,
-            errorType: ErrorType.TypeMismatch,
-            errorMessage: "Flare provider only supports boolean flag evaluation for now"
-        );
-    }
 }
