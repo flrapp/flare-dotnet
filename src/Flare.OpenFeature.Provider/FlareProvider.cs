@@ -22,16 +22,67 @@ public sealed class FlareProvider : FeatureProvider
 
     private readonly IFlareApiClient _apiClient;
     private readonly FlareApiClientOptions _options;
+    private readonly FlareProviderOptions _providerOptions;
     private readonly ILogger<FlareProvider> _logger;
+    private readonly FlagCache _cache = new FlagCache();
+    private readonly SemaphoreSlim _pollLock = new SemaphoreSlim(1, 1);
 
-    public FlareProvider(IFlareApiClient apiClient, IOptions<FlareApiClientOptions> options,ILogger<FlareProvider>? logger = null)
+    private Timer? _pollTimer;
+    private int _consecutiveFailures;
+    private volatile bool _disposed;
+
+    public FlareProvider(
+        IFlareApiClient apiClient,
+        IOptions<FlareApiClientOptions> options,
+        IOptions<FlareProviderOptions> providerOptions,
+        ILogger<FlareProvider>? logger = null)
     {
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _options = options.Value;
+        _providerOptions = providerOptions.Value;
         _logger = logger ?? NullLogger<FlareProvider>.Instance;
     }
-    
+
     public override Metadata? GetMetadata() => ProviderMetadata;
+
+    public override async Task InitializeAsync(EvaluationContext context, CancellationToken cancellationToken = default)
+    {
+        if (!_providerOptions.CachingEnabled)
+            return;
+
+        try
+        {
+            var flareContext = BuildFlareContext(context);
+            var response = await _apiClient.EvaluateAllAsync(flareContext, cancellationToken).ConfigureAwait(false);
+            _cache.Update(response.Flags, _options.Scope);
+            _logger.LogInformation("Flare provider initialized with {FlagCount} flags cached", response.Flags.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to populate flag cache during initialization");
+            StartPollTimer();
+            throw;
+        }
+
+        StartPollTimer();
+    }
+
+    public override Task ShutdownAsync(CancellationToken cancellationToken = default)
+    {
+        _disposed = true;
+
+        if (_pollTimer != null)
+        {
+            _pollTimer.Change(Timeout.Infinite, Timeout.Infinite);
+            _pollTimer.Dispose();
+            _pollTimer = null;
+        }
+
+        _pollLock.Dispose();
+        _logger.LogInformation("Flare provider shut down");
+
+        return Task.CompletedTask;
+    }
 
     public override async Task<ResolutionDetails<bool>> ResolveBooleanValueAsync(
         string flagKey,
@@ -39,16 +90,156 @@ public sealed class FlareProvider : FeatureProvider
         EvaluationContext? context = null,
         CancellationToken cancellationToken = default)
     {
+        if (_providerOptions.CachingEnabled && !_cache.IsEmpty)
+        {
+            var cacheKey = FlagCache.BuildKey(_options.Scope, flagKey);
+            if (_cache.TryGetFlag(cacheKey, out var cached))
+            {
+                return new ResolutionDetails<bool>(
+                    flagKey: flagKey,
+                    value: cached.Value,
+                    variant: cached.Variant,
+                    reason: Reason.Cached,
+                    errorType: ErrorType.None,
+                    errorMessage: null,
+                    flagMetadata: BuildFlagMetadata(cached.Metadata)
+                );
+            }
+
+            return CreateErrorResult(flagKey, defaultValue, ErrorType.FlagNotFound,
+                $"Flag '{flagKey}' not found in cache");
+        }
+
+        return await EvaluateDirectAsync(flagKey, defaultValue, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    public override Task<ResolutionDetails<string>> ResolveStringValueAsync(
+        string flagKey,
+        string defaultValue,
+        EvaluationContext? context = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(CreateTypeMismatchResult(flagKey, defaultValue));
+    }
+
+    public override Task<ResolutionDetails<int>> ResolveIntegerValueAsync(
+        string flagKey,
+        int defaultValue,
+        EvaluationContext? context = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(CreateTypeMismatchResult(flagKey, defaultValue));
+    }
+
+    public override Task<ResolutionDetails<double>> ResolveDoubleValueAsync(
+        string flagKey,
+        double defaultValue,
+        EvaluationContext? context = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(CreateTypeMismatchResult(flagKey, defaultValue));
+    }
+
+    public override Task<ResolutionDetails<Value>> ResolveStructureValueAsync(
+        string flagKey,
+        Value defaultValue,
+        EvaluationContext? context = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(CreateTypeMismatchResult(flagKey, defaultValue));
+    }
+
+    private void StartPollTimer()
+    {
+        _pollTimer = new Timer(
+            PollCallback,
+            null,
+            _providerOptions.PollingInterval,
+            _providerOptions.PollingInterval);
+    }
+
+    private async void PollCallback(object? state)
+    {
+        if (_disposed)
+            return;
+
+        if (!_pollLock.Wait(0))
+            return;
+
         try
         {
-            var flareContext = new FlareEvaluationContext
-            {
-                Scope = _options.Scope,
-                TargetingKey = context?.TargetingKey,
-                Attributes = context?.AsDictionary()
-                    .ToDictionary(x => x.Key, y => y.Value?.AsString)
-            };
+            await PollAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled error in poll callback");
+        }
+        finally
+        {
+            try { _pollLock.Release(); }
+            catch (ObjectDisposedException) { }
+        }
+    }
 
+    private async Task PollAsync()
+    {
+        try
+        {
+            var flareContext = new FlareEvaluationContext { Scope = _options.Scope };
+            var response = await _apiClient.EvaluateAllAsync(flareContext, CancellationToken.None).ConfigureAwait(false);
+            var changedKeys = _cache.Update(response.Flags, _options.Scope);
+
+            Interlocked.Exchange(ref _consecutiveFailures, 0);
+
+            if (changedKeys.Count > 0)
+            {
+                _logger.LogInformation("Poll detected {Count} flag change(s): {Keys}",
+                    changedKeys.Count, string.Join(", ", changedKeys));
+
+                EventChannel.Writer.TryWrite(new ProviderEventPayload
+                {
+                    Type = ProviderEventTypes.ProviderConfigurationChanged,
+                    ProviderName = GetMetadata()?.Name,
+                    Message = $"{changedKeys.Count} flag(s) changed",
+                    FlagsChanged = changedKeys.ToList()
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            var failures = Interlocked.Increment(ref _consecutiveFailures);
+            _logger.LogError(ex, "Poll failed ({ConsecutiveFailures} consecutive)", failures);
+
+            if (failures >= _providerOptions.StaleThreshold)
+            {
+                EventChannel.Writer.TryWrite(new ProviderEventPayload
+                {
+                    Type = ProviderEventTypes.ProviderStale,
+                    ProviderName = GetMetadata()?.Name,
+                    Message = $"Poll failed {failures} consecutive times: {ex.Message}"
+                });
+            }
+            else
+            {
+                EventChannel.Writer.TryWrite(new ProviderEventPayload
+                {
+                    Type = ProviderEventTypes.ProviderError,
+                    ProviderName = GetMetadata()?.Name,
+                    Message = $"Poll failed: {ex.Message}"
+                });
+            }
+        }
+    }
+
+    private async Task<ResolutionDetails<bool>> EvaluateDirectAsync(
+        string flagKey,
+        bool defaultValue,
+        EvaluationContext? context,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var flareContext = BuildFlareContext(context);
             var response = await _apiClient.EvaluateAsync(flagKey, flareContext, cancellationToken).ConfigureAwait(false);
 
             return new ResolutionDetails<bool>(
@@ -93,40 +284,15 @@ public sealed class FlareProvider : FeatureProvider
         }
     }
 
-    public override Task<ResolutionDetails<string>> ResolveStringValueAsync(
-        string flagKey,
-        string defaultValue,
-        EvaluationContext? context = null,
-        CancellationToken cancellationToken = default)
+    private FlareEvaluationContext BuildFlareContext(EvaluationContext? context)
     {
-        return Task.FromResult(CreateTypeMismatchResult(flagKey, defaultValue));
-    }
-
-    public override Task<ResolutionDetails<int>> ResolveIntegerValueAsync(
-        string flagKey,
-        int defaultValue,
-        EvaluationContext? context = null,
-        CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(CreateTypeMismatchResult(flagKey, defaultValue));
-    }
-
-    public override Task<ResolutionDetails<double>> ResolveDoubleValueAsync(
-        string flagKey,
-        double defaultValue,
-        EvaluationContext? context = null,
-        CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(CreateTypeMismatchResult(flagKey, defaultValue));
-    }
-
-    public override Task<ResolutionDetails<Value>> ResolveStructureValueAsync(
-        string flagKey,
-        Value defaultValue,
-        EvaluationContext? context = null,
-        CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(CreateTypeMismatchResult(flagKey, defaultValue));
+        return new FlareEvaluationContext
+        {
+            Scope = _options.Scope,
+            TargetingKey = context?.TargetingKey,
+            Attributes = context?.AsDictionary()
+                .ToDictionary(x => x.Key, y => y.Value?.AsString)
+        };
     }
 
     private static string MapReason(string? reason)

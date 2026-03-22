@@ -2,6 +2,7 @@ using System;
 using Flare.HttpClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenFeature;
 
 namespace Flare.OpenFeature.Provider;
@@ -55,14 +56,15 @@ public static class ServiceCollectionExtensions
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddFlareProvider(
         this IServiceCollection services,
-        FlareApiClientOptions options)
+        FlareApiClientOptions options,
+        FlareProviderOptions? providerOptions = null)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));
         if (options == null)
             throw new ArgumentNullException(nameof(options));
 
-        return services.AddFlareProviderCore(options);
+        return services.AddFlareProviderCore(options, providerOptions ?? new FlareProviderOptions());
     }
 
     /// <summary>
@@ -90,12 +92,22 @@ public static class ServiceCollectionExtensions
             Scope = section["Scope"] ?? string.Empty,
         };
         
-        return services.AddFlareProviderCore(options);
+        return services.AddFlareProviderCore(options, new FlareProviderOptions());
     }
 
-    private static IServiceCollection AddFlareProviderCore(this IServiceCollection services, FlareApiClientOptions options)
+    private static IServiceCollection AddFlareProviderCore(
+        this IServiceCollection services,
+        FlareApiClientOptions options,
+        FlareProviderOptions providerOptions)
     {
         services.AddFlareHttpClient(options);
+
+        services.Configure<FlareProviderOptions>(o =>
+        {
+            o.PollingInterval = providerOptions.PollingInterval;
+            o.StaleThreshold = providerOptions.StaleThreshold;
+            o.CachingEnabled = providerOptions.CachingEnabled;
+        });
 
         services.AddSingleton<FlareProvider>();
 
