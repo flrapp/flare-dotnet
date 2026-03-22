@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Flare.HttpClient.Models;
+using Microsoft.Extensions.Options;
 
 namespace Flare.HttpClient;
 
@@ -15,14 +16,16 @@ internal class FlareApiClient : IFlareApiClient
     private const string EvaluateAllEndpoint = "/sdk/v1/flags/evaluate-all";
 
     private readonly System.Net.Http.HttpClient _httpClient;
+    private readonly FlareApiClientOptions _options;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public FlareApiClient(System.Net.Http.HttpClient httpClient)
+    public FlareApiClient(System.Net.Http.HttpClient httpClient, IOptions<FlareApiClientOptions> options)
     {
+        _options = options.Value;
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
     }
 
@@ -36,6 +39,9 @@ internal class FlareApiClient : IFlareApiClient
         if (context == null)
             throw new ArgumentNullException(nameof(context));
 
+        if (string.IsNullOrWhiteSpace(context.Scope))
+            context.Scope = _options.Scope;
+        
         var request = new FlareEvaluationRequest
         {
             FlagKey = flagKey,
@@ -66,6 +72,9 @@ internal class FlareApiClient : IFlareApiClient
     {
         if (context == null)
             throw new ArgumentNullException(nameof(context));
+        
+        if(string.IsNullOrWhiteSpace(context.Scope))
+            context.Scope = _options.Scope;
 
         var request = new FlareEvaluateAllRequest { Context = context };
         var json = JsonSerializer.Serialize(request, JsonOptions);
