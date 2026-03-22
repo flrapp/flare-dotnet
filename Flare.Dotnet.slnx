@@ -4,6 +4,7 @@
     <File Path=".github\workflows\release-flare-openfeature-provider.yml" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Flare.HttpClient\Flare.HttpClient.csproj" />
     <Project Path="src/Flare.Extensions.Configuration\Flare.Extensions.Configuration.csproj" />
     <Project Path="src\Flare.OpenFeature.Provider\Flare.OpenFeature.Provider.csproj" />
   </Folder>

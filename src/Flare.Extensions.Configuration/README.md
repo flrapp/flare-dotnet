@@ -63,17 +63,17 @@ builder.Services.AddFlareBackgroundService(builder.Configuration, "Flare");
 ## How It Works
 
 1. `AddFlareConfiguration()` registers a configuration provider that listens for flag updates
-2. `AddFlareBackgroundService()` starts a hosted service that periodically fetches flags from the Flare API
+2. `AddFlareBackgroundService()` registers [Flare.HttpClient](../Flare.HttpClient) and starts a hosted service that periodically fetches flags via `IFlareApiClient`
 3. Flags are exposed under the configured section (default: `FeatureFlags:{flag-key}`)
 4. Configuration change tokens allow `IOptionsSnapshot<T>` and `IOptionsMonitor<T>` to react to updates
 
 ## Features
 
-- ASP.NET Core integration - Works seamlessly with `IConfiguration`
-- Auto-reload - Background service periodically refreshes feature flags
-- Multi-environment - Support for dev, staging, production scopes via `ScopeAlias`
-- Change notifications - Triggers `IOptionsMonitor<T>` callbacks on flag updates
-- Logging support - Built-in logging for monitoring reload operations
+- ASP.NET Core integration — works seamlessly with `IConfiguration`
+- Auto-reload — background service periodically refreshes feature flags
+- Multi-environment — support for dev, staging, production scopes via `ScopeAlias`
+- Change notifications — triggers `IOptionsMonitor<T>` callbacks on flag updates
+- Shared HTTP client — uses [Flare.HttpClient](../Flare.HttpClient) for all API communication
 
 ## License
 
@@ -81,4 +81,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Related Projects
 
-- [Flare Server](https://github.com/flrapp/flare-api) - Self-hosted feature flag management
+- [Flare Server](https://github.com/flrapp/flare-api) — Self-hosted feature flag management
+- [Flare.HttpClient](../Flare.HttpClient) — Standalone HTTP client for the Flare API
+- [Flare.OpenFeature.Provider](../Flare.OpenFeature.Provider) — OpenFeature provider with caching and polling

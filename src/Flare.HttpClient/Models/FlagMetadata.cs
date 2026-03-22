@@ -1,7 +1,7 @@
 using System;
 using System.Text.Json.Serialization;
 
-namespace OpenFeature.Contrib.Providers.Flare.Models;
+namespace Flare.HttpClient.Models;
 
 public sealed class FlagMetadata
 {

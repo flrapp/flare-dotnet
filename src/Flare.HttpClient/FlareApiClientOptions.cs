@@ -1,4 +1,4 @@
-﻿namespace OpenFeature.Contrib.Providers.Flare;
+namespace Flare.HttpClient;
 
 public class FlareApiClientOptions
 {
