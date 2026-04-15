@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Flare.HttpClient.Models;
 
 namespace Flare.OpenFeature.Provider;
@@ -39,8 +40,9 @@ internal sealed class FlagCache
         foreach (var kvp in newDict)
         {
             if (!oldDict.TryGetValue(kvp.Key, out var oldFlag) ||
-                oldFlag.Value != kvp.Value.Value ||
-                oldFlag.Variant != kvp.Value.Variant)
+                !ValueEquals(oldFlag.Value, kvp.Value.Value) ||
+                oldFlag.Variant != kvp.Value.Variant ||
+                oldFlag.Type != kvp.Value.Type)
             {
                 changedKeys.Add(kvp.Value.FlagKey);
             }
@@ -60,4 +62,12 @@ internal sealed class FlagCache
     }
 
     public static string BuildKey(string scope, string flagKey) => $"{scope}:{flagKey}";
+
+    // JsonElement doesn't override Equals/== — compare by raw text instead.
+    private static bool ValueEquals(object? a, object? b)
+    {
+        if (a is JsonElement jeA && b is JsonElement jeB)
+            return jeA.GetRawText() == jeB.GetRawText();
+        return Equals(a, b);
+    }
 }

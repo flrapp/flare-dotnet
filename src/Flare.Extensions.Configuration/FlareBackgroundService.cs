@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Flare.HttpClient;
@@ -46,6 +47,28 @@ public class FlareBackgroundService : BackgroundService
         }
     }
 
+    private static string? FlagValueToString(object? value)
+    {
+        if (value is null)
+            return null;
+
+        if (value is JsonElement element)
+        {
+            return element.ValueKind switch
+            {
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Number => element.GetRawText(),
+                JsonValueKind.Object or JsonValueKind.Array => element.GetRawText(),
+                JsonValueKind.Null => null,
+                _ => null
+            };
+        }
+
+        return value.ToString()?.ToLowerInvariant();
+    }
+
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
         var context = new FlareEvaluationContext
@@ -59,7 +82,7 @@ public class FlareBackgroundService : BackgroundService
 
         foreach (var flag in result.Flags)
         {
-            data[$"{_options.FeatureFlagSection}:{flag.FlagKey}"] = flag.Value.ToString().ToLowerInvariant();
+            data[$"{_options.FeatureFlagSection}:{flag.FlagKey}"] = FlagValueToString(flag.Value);
         }
 
         _observer.SetAll(data);

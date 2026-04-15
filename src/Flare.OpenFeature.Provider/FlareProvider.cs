@@ -85,69 +85,177 @@ public sealed class FlareProvider : FeatureProvider
         return Task.CompletedTask;
     }
 
-    public override async Task<ResolutionDetails<bool>> ResolveBooleanValueAsync(
+    public override Task<ResolutionDetails<bool>> ResolveBooleanValueAsync(
         string flagKey,
         bool defaultValue,
         EvaluationContext? context = null,
         CancellationToken cancellationToken = default)
-    {
-        if (_providerOptions.CachingEnabled && !_cache.IsEmpty)
-        {
-            var cacheKey = FlagCache.BuildKey(_options.Scope, flagKey);
-            if (_cache.TryGetFlag(cacheKey, out var cached))
-            {
-                return new ResolutionDetails<bool>(
-                    flagKey: flagKey,
-                    value: cached.Value,
-                    variant: cached.Variant,
-                    reason: Reason.Cached,
-                    errorType: ErrorType.None,
-                    errorMessage: null,
-                    flagMetadata: BuildFlagMetadata(cached.Metadata)
-                );
-            }
-
-            throw new FlagNotFoundException($"Flag '{flagKey}' not found in cache");
-        }
-
-        return await EvaluateDirectAsync(flagKey, defaultValue, context, cancellationToken).ConfigureAwait(false);
-    }
+        => ResolveAsync(flagKey, defaultValue, context, cancellationToken, ExtractBool);
 
     public override Task<ResolutionDetails<string>> ResolveStringValueAsync(
         string flagKey,
         string defaultValue,
         EvaluationContext? context = null,
         CancellationToken cancellationToken = default)
-    {
-        throw new TypeMismatchException("Flare provider only supports boolean flag evaluation");
-    }
+        => ResolveAsync(flagKey, defaultValue, context, cancellationToken, ExtractString);
 
     public override Task<ResolutionDetails<int>> ResolveIntegerValueAsync(
         string flagKey,
         int defaultValue,
         EvaluationContext? context = null,
         CancellationToken cancellationToken = default)
-    {
-        throw new TypeMismatchException("Flare provider only supports boolean flag evaluation");
-    }
+        => ResolveAsync(flagKey, defaultValue, context, cancellationToken, ExtractInt);
 
     public override Task<ResolutionDetails<double>> ResolveDoubleValueAsync(
         string flagKey,
         double defaultValue,
         EvaluationContext? context = null,
         CancellationToken cancellationToken = default)
-    {
-        throw new TypeMismatchException("Flare provider only supports boolean flag evaluation");
-    }
+        => ResolveAsync(flagKey, defaultValue, context, cancellationToken, ExtractDouble);
 
     public override Task<ResolutionDetails<Value>> ResolveStructureValueAsync(
         string flagKey,
         Value defaultValue,
         EvaluationContext? context = null,
         CancellationToken cancellationToken = default)
+        => ResolveAsync(flagKey, defaultValue, context, cancellationToken, ExtractStructure);
+
+    // --- Core resolution pipeline ---
+
+    private async Task<ResolutionDetails<T>> ResolveAsync<T>(
+        string flagKey,
+        T defaultValue,
+        EvaluationContext? context,
+        CancellationToken cancellationToken,
+        Func<FlagEvaluationResponse, T> extract)
     {
-        throw new TypeMismatchException("Flare provider only supports boolean flag evaluation");
+        if (_providerOptions.CachingEnabled && !_cache.IsEmpty)
+        {
+            var cacheKey = FlagCache.BuildKey(_options.Scope, flagKey);
+            if (_cache.TryGetFlag(cacheKey, out var cached))
+            {
+                return new ResolutionDetails<T>(
+                    flagKey: flagKey,
+                    value: extract(cached),
+                    variant: cached.Variant,
+                    reason: Reason.Cached,
+                    errorType: ErrorType.None,
+                    errorMessage: null,
+                    flagMetadata: BuildFlagMetadata(cached.Metadata));
+            }
+
+            throw new FlagNotFoundException($"Flag '{flagKey}' not found in cache");
+        }
+
+        return await EvaluateDirectAsync(flagKey, context, cancellationToken, extract).ConfigureAwait(false);
     }
+
+    private async Task<ResolutionDetails<T>> EvaluateDirectAsync<T>(
+        string flagKey,
+        EvaluationContext? context,
+        CancellationToken cancellationToken,
+        Func<FlagEvaluationResponse, T> extract)
+    {
+        try
+        {
+            var flareContext = EvaluationContextConverter.ToFlareContext(context, _options.Scope);
+            var response = await _apiClient.EvaluateAsync(flagKey, flareContext, cancellationToken).ConfigureAwait(false);
+
+            return new ResolutionDetails<T>(
+                flagKey: flagKey,
+                value: extract(response),
+                variant: response.Variant,
+                reason: MapReason(response.Reason),
+                errorType: ErrorType.None,
+                errorMessage: null,
+                flagMetadata: BuildFlagMetadata(response.Metadata));
+        }
+        catch (FlareApiException ex)
+        {
+            _logger.LogError(ex, "API error evaluating flag {FlagKey}: {StatusCode}", flagKey, ex.StatusCode);
+            throw new GeneralException($"Flare API error: {ex.Message}", ex);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "HTTP error evaluating flag {FlagKey}", flagKey);
+            throw new ProviderNotReadyException($"HTTP error: {ex.Message}", ex);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "JSON parsing error for flag {FlagKey}", flagKey);
+            throw new ParseErrorException($"Failed to parse response for flag '{flagKey}'", ex);
+        }
+        catch (TaskCanceledException ex) when (ex.CancellationToken == cancellationToken)
+        {
+            _logger.LogWarning("Flag evaluation cancelled for {FlagKey}", flagKey);
+            throw;
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogError(ex, "Timeout evaluating flag {FlagKey}", flagKey);
+            throw new ProviderNotReadyException("Request timeout", ex);
+        }
+        catch (FeatureProviderException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error evaluating flag {FlagKey}", flagKey);
+            throw new GeneralException($"Unexpected error evaluating flag '{flagKey}'", ex);
+        }
+    }
+
+    // --- Value extractors ---
+
+    private static bool ExtractBool(FlagEvaluationResponse r) => ExtractPrimitive<bool>(r);
+    private static string ExtractString(FlagEvaluationResponse r) => ExtractPrimitive<string>(r);
+    private static int ExtractInt(FlagEvaluationResponse r) => ExtractPrimitive<int>(r);
+    private static double ExtractDouble(FlagEvaluationResponse r) => ExtractPrimitive<double>(r);
+
+    private static T ExtractPrimitive<T>(FlagEvaluationResponse r)
+    {
+        if (r.Value is T directValue)
+            return directValue;
+
+        if (r.Value is JsonElement element)
+        {
+            var result = element.Deserialize<T>();
+            if (result is not null)
+                return result;
+        }
+
+        throw new TypeMismatchException(
+            $"Flag '{r.FlagKey}' cannot be resolved as {typeof(T).Name}.");
+    }
+
+    private static Value ExtractStructure(FlagEvaluationResponse r)
+    {
+        if (r.Value is Value directValue)
+            return directValue;
+
+        if (r.Value is JsonElement element)
+            return JsonElementToValue(element);
+
+        throw new TypeMismatchException(
+            $"Flag '{r.FlagKey}' cannot be resolved as a structure.");
+    }
+
+    private static Value JsonElementToValue(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.True => new Value(true),
+        JsonValueKind.False => new Value(false),
+        JsonValueKind.String => new Value(element.GetString()!),
+        JsonValueKind.Number => element.TryGetInt32(out var i) ? new Value(i) : new Value(element.GetDouble()),
+        JsonValueKind.Object => new Value(
+            new Structure(element.EnumerateObject()
+                .ToDictionary(p => p.Name, p => JsonElementToValue(p.Value)))),
+        JsonValueKind.Array => new Value(
+            element.EnumerateArray().Select(JsonElementToValue).ToList()),
+        _ => new Value()
+    };
+
+    // --- Polling ---
 
     private void StartPollTimer()
     {
@@ -231,62 +339,7 @@ public sealed class FlareProvider : FeatureProvider
         }
     }
 
-    private async Task<ResolutionDetails<bool>> EvaluateDirectAsync(
-        string flagKey,
-        bool defaultValue,
-        EvaluationContext? context,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var flareContext = EvaluationContextConverter.ToFlareContext(context, _options.Scope);
-            var response = await _apiClient.EvaluateAsync(flagKey, flareContext, cancellationToken).ConfigureAwait(false);
-
-            return new ResolutionDetails<bool>(
-                flagKey: flagKey,
-                value: response.Value,
-                variant: response.Variant,
-                reason: MapReason(response.Reason),
-                errorType: ErrorType.None,
-                errorMessage: null,
-                flagMetadata: BuildFlagMetadata(response.Metadata)
-            );
-        }
-        catch (FlareApiException ex)
-        {
-            _logger.LogError(ex, "API error evaluating flag {FlagKey}: {StatusCode}", flagKey, ex.StatusCode);
-            throw new GeneralException($"Flare API error: {ex.Message}", ex);
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError(ex, "HTTP error evaluating flag {FlagKey}", flagKey);
-            throw new ProviderNotReadyException($"HTTP error: {ex.Message}", ex);
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogError(ex, "JSON parsing error for flag {FlagKey}", flagKey);
-            throw new ParseErrorException($"Failed to parse response for flag '{flagKey}'", ex);
-        }
-        catch (TaskCanceledException ex) when (ex.CancellationToken == cancellationToken)
-        {
-            _logger.LogWarning("Flag evaluation cancelled for {FlagKey}", flagKey);
-            throw;
-        }
-        catch (TaskCanceledException ex)
-        {
-            _logger.LogError(ex, "Timeout evaluating flag {FlagKey}", flagKey);
-            throw new ProviderNotReadyException("Request timeout", ex);
-        }
-        catch (FeatureProviderException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error evaluating flag {FlagKey}", flagKey);
-            throw new GeneralException($"Unexpected error evaluating flag '{flagKey}'", ex);
-        }
-    }
+    // --- Helpers ---
 
     private static string MapReason(string? reason)
     {
@@ -323,5 +376,4 @@ public sealed class FlareProvider : FeatureProvider
 
         return new ImmutableMetadata(dict);
     }
-
 }

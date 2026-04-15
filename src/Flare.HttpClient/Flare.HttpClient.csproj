@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <PackageId>Flare.HttpClient</PackageId>
     <Description>HTTP client library for the Flare feature flag API</Description>
-    <Version>10.0.0</Version>
+    <Version>10.2.0</Version>
     <Company>Flare</Company>
     <RepositoryUrl>https://github.com/flrapp/flare-dotnet</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

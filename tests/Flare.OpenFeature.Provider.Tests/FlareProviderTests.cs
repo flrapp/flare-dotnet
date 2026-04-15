@@ -296,46 +296,166 @@ public class FlareProviderTests
 
     #endregion
 
-    #region Unsupported Types
+    #region String Flags
 
     [Fact]
-    public void ResolveStringValue_ThrowsTypeMismatchException()
+    public async Task ResolveStringValue_DirectMode_ReturnsStringResult()
     {
-        var provider = CreateProvider();
+        var response = new FlagEvaluationResponse
+        {
+            FlagKey = "str-flag",
+            Value = "hello",
+            Variant = "greeting",
+            Reason = "STATIC",
+            Type = "string"
+        };
+        _apiClient.EvaluateAsync("str-flag", Arg.Any<FlareEvaluationContext>(), Arg.Any<CancellationToken>())
+            .Returns(response);
 
-        var act = () => provider.ResolveStringValueAsync("flag", "default");
+        var provider = CreateProvider(new FlareProviderOptions { CachingEnabled = false });
 
-        act.Should().ThrowAsync<TypeMismatchException>();
+        var result = await provider.ResolveStringValueAsync("str-flag", "default");
+
+        result.FlagKey.Should().Be("str-flag");
+        result.Value.Should().Be("hello");
+        result.Variant.Should().Be("greeting");
+        result.Reason.Should().Be(Reason.Static);
+
+        await provider.ShutdownAsync();
     }
 
     [Fact]
-    public void ResolveIntegerValue_ThrowsTypeMismatchException()
+    public async Task ResolveStringValue_CachedMode_ReturnsCachedResult()
     {
+        var flags = new FlareEvaluateAllResponse
+        {
+            Flags = new List<FlagEvaluationResponse>
+            {
+                new() { FlagKey = "str-flag", Value = "world", Variant = "v1", Reason = "STATIC", Type = "string" }
+            }
+        };
+        _apiClient.EvaluateAllAsync(Arg.Any<FlareEvaluationContext>(), Arg.Any<CancellationToken>())
+            .Returns(flags);
+
         var provider = CreateProvider();
+        await provider.InitializeAsync(EvaluationContext.Builder().Build());
 
-        var act = () => provider.ResolveIntegerValueAsync("flag", 0);
+        var result = await provider.ResolveStringValueAsync("str-flag", "default");
 
-        act.Should().ThrowAsync<TypeMismatchException>();
+        result.Value.Should().Be("world");
+        result.Reason.Should().Be(Reason.Cached);
+
+        await provider.ShutdownAsync();
+    }
+
+    #endregion
+
+    #region Number Flags
+
+    [Fact]
+    public async Task ResolveIntegerValue_DirectMode_ReturnsIntResult()
+    {
+        var response = new FlagEvaluationResponse
+        {
+            FlagKey = "int-flag",
+            Value = 42,
+            Variant = "high",
+            Reason = "STATIC",
+            Type = "number"
+        };
+        _apiClient.EvaluateAsync("int-flag", Arg.Any<FlareEvaluationContext>(), Arg.Any<CancellationToken>())
+            .Returns(response);
+
+        var provider = CreateProvider(new FlareProviderOptions { CachingEnabled = false });
+
+        var result = await provider.ResolveIntegerValueAsync("int-flag", 0);
+
+        result.FlagKey.Should().Be("int-flag");
+        result.Value.Should().Be(42);
+        result.Variant.Should().Be("high");
+
+        await provider.ShutdownAsync();
     }
 
     [Fact]
-    public void ResolveDoubleValue_ThrowsTypeMismatchException()
+    public async Task ResolveDoubleValue_DirectMode_ReturnsDoubleResult()
     {
-        var provider = CreateProvider();
+        var response = new FlagEvaluationResponse
+        {
+            FlagKey = "dbl-flag",
+            Value = 3.14,
+            Variant = "pi",
+            Reason = "STATIC",
+            Type = "number"
+        };
+        _apiClient.EvaluateAsync("dbl-flag", Arg.Any<FlareEvaluationContext>(), Arg.Any<CancellationToken>())
+            .Returns(response);
 
-        var act = () => provider.ResolveDoubleValueAsync("flag", 0.0);
+        var provider = CreateProvider(new FlareProviderOptions { CachingEnabled = false });
 
-        act.Should().ThrowAsync<TypeMismatchException>();
+        var result = await provider.ResolveDoubleValueAsync("dbl-flag", 0.0);
+
+        result.FlagKey.Should().Be("dbl-flag");
+        result.Value.Should().BeApproximately(3.14, 0.001);
+
+        await provider.ShutdownAsync();
+    }
+
+    #endregion
+
+    #region JSON/Structure Flags
+
+    [Fact]
+    public async Task ResolveStructureValue_DirectMode_ReturnsStructureResult()
+    {
+        var structureValue = new global::OpenFeature.Model.Value(
+            new global::OpenFeature.Model.Structure(
+                new Dictionary<string, global::OpenFeature.Model.Value>
+                {
+                    ["test"] = new global::OpenFeature.Model.Value("value1")
+                }));
+
+        var response = new FlagEvaluationResponse
+        {
+            FlagKey = "json-flag",
+            Value = structureValue,
+            Variant = null,
+            Reason = "STATIC",
+            Type = "json"
+        };
+        _apiClient.EvaluateAsync("json-flag", Arg.Any<FlareEvaluationContext>(), Arg.Any<CancellationToken>())
+            .Returns(response);
+
+        var provider = CreateProvider(new FlareProviderOptions { CachingEnabled = false });
+
+        var result = await provider.ResolveStructureValueAsync("json-flag", new global::OpenFeature.Model.Value());
+
+        result.FlagKey.Should().Be("json-flag");
+        result.Value.Should().NotBeNull();
+
+        await provider.ShutdownAsync();
     }
 
     [Fact]
-    public void ResolveStructureValue_ThrowsTypeMismatchException()
+    public async Task ResolveStructureValue_WrongType_ThrowsTypeMismatchException()
     {
-        var provider = CreateProvider();
+        var response = new FlagEvaluationResponse
+        {
+            FlagKey = "bool-flag",
+            Value = true,
+            Reason = "STATIC",
+            Type = "boolean"
+        };
+        _apiClient.EvaluateAsync("bool-flag", Arg.Any<FlareEvaluationContext>(), Arg.Any<CancellationToken>())
+            .Returns(response);
 
-        var act = () => provider.ResolveStructureValueAsync("flag", new global::OpenFeature.Model.Value());
+        var provider = CreateProvider(new FlareProviderOptions { CachingEnabled = false });
 
-        act.Should().ThrowAsync<TypeMismatchException>();
+        var act = () => provider.ResolveStructureValueAsync("bool-flag", new global::OpenFeature.Model.Value());
+
+        await act.Should().ThrowAsync<TypeMismatchException>();
+
+        await provider.ShutdownAsync();
     }
 
     #endregion

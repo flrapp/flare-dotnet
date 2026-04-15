@@ -73,7 +73,18 @@ public class MyService
 
     public async Task DoWork()
     {
+        // boolean flag
         var isEnabled = await _client.GetBooleanValueAsync("my-flag", false);
+
+        // string flag
+        var theme = await _client.GetStringValueAsync("ui-theme", "default");
+
+        // number flags
+        var timeout = await _client.GetIntegerValueAsync("request-timeout", 30);
+        var rate = await _client.GetDoubleValueAsync("sample-rate", 0.1);
+
+        // json flag — returns OpenFeature Value (supports nested objects/arrays)
+        var config = await _client.GetObjectValueAsync("feature-config", new Value());
     }
 }
 ```
@@ -125,7 +136,17 @@ When caching is disabled, flags are evaluated directly against the Flare API per
 
 ## Supported Value Types
 
-Currently only boolean flag evaluation is supported. Calling `GetStringValueAsync`, `GetIntegerValueAsync`, `GetDoubleValueAsync`, or `GetStructureValueAsync` will throw a `TypeMismatchException`.
+All Flare flag types are supported:
+
+| Flare type | OpenFeature method | .NET type |
+|------------|--------------------|-----------|
+| `boolean` | `GetBooleanValueAsync` | `bool` |
+| `string` | `GetStringValueAsync` | `string` |
+| `number` | `GetIntegerValueAsync` | `int` |
+| `number` | `GetDoubleValueAsync` | `double` |
+| `json` | `GetObjectValueAsync` | `Value` (OpenFeature) |
+
+Requesting a flag with an incompatible type (e.g., calling `GetBooleanValueAsync` on a `json` flag) throws `TypeMismatchException`.
 
 ## License
 
