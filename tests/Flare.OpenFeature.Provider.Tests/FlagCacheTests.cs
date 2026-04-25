@@ -39,7 +39,7 @@ public class FlagCacheTests
         var found = _cache.TryGetFlag("prod:my-flag", out var result);
 
         found.Should().BeTrue();
-        result.Value.Should().BeTrue();
+        result.Value.Should().Be(true);
         result.Variant.Should().Be("enabled");
         result.FlagKey.Should().Be("my-flag");
     }

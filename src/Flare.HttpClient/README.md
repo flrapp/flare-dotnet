@@ -28,7 +28,7 @@ public class MyService
 
     public MyService(IFlareApiClient client) => _client = client;
 
-    public async Task<bool> IsFlagEnabled(string flagKey)
+    public async Task<object?> GetFlagValue(string flagKey)
     {
         var context = new FlareEvaluationContext
         {
@@ -37,6 +37,8 @@ public class MyService
         };
 
         var result = await _client.EvaluateAsync(flagKey, context);
+        // result.Type is "boolean", "string", "number", or "json"
+        // result.Value is the raw deserialized value (JsonElement from the API)
         return result.Value;
     }
 
@@ -65,6 +67,16 @@ public class MyService
 | `BaseUrl` | `string` | Flare API base URL (required) |
 | `ApiKey` | `string` | API key for Bearer authentication (required) |
 | `Scope` | `string` | Default scope/environment for flag evaluation |
+
+### `FlagEvaluationResponse`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `FlagKey` | `string` | The flag identifier |
+| `Value` | `object?` | The flag value (`JsonElement` when received from the API) |
+| `Type` | `string?` | Value type: `"boolean"`, `"string"`, `"number"`, or `"json"` |
+| `Variant` | `string?` | The matched variant name |
+| `Reason` | `string` | Evaluation reason (e.g., `"STATIC"`, `"TARGETING_MATCH"`) |
 
 ### Error Handling
 
