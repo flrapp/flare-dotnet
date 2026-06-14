@@ -653,6 +653,115 @@ public class FlareProviderTests
 
     #endregion
 
+    #region Cache bypass when context is provided
+
+    [Fact]
+    public async Task ResolveBooleanValue_CachingEnabled_WithContext_BypassesCacheAndCallsApi()
+    {
+        var cachedFlags = new FlareEvaluateAllResponse
+        {
+            Flags = new List<FlagEvaluationResponse>
+            {
+                new() { FlagKey = "feature-x", Value = false, Variant = "off", Reason = "STATIC" }
+            }
+        };
+        _apiClient.EvaluateAllAsync(Arg.Any<FlareEvaluationContext>(), Arg.Any<CancellationToken>())
+            .Returns(cachedFlags);
+
+        var apiResponse = new FlagEvaluationResponse
+        {
+            FlagKey = "feature-x",
+            Value = true,
+            Variant = "on",
+            Reason = "TARGETING_MATCH"
+        };
+        _apiClient.EvaluateAsync("feature-x", Arg.Any<FlareEvaluationContext>(), Arg.Any<CancellationToken>())
+            .Returns(apiResponse);
+
+        var provider = CreateProvider();
+        await provider.InitializeAsync(EvaluationContext.Builder().Build());
+
+        var context = EvaluationContext.Builder().SetTargetingKey("user-123").Build();
+        var result = await provider.ResolveBooleanValueAsync("feature-x", false, context);
+
+        result.Value.Should().BeTrue();
+        result.Reason.Should().Be(Reason.TargetingMatch);
+        await _apiClient.Received(1).EvaluateAsync(
+            "feature-x",
+            Arg.Is<FlareEvaluationContext>(c => c.TargetingKey == "user-123"),
+            Arg.Any<CancellationToken>());
+
+        await provider.ShutdownAsync();
+    }
+
+    [Fact]
+    public async Task ResolveBooleanValue_CachingEnabled_WithEmptyContext_BypassesCacheAndCallsApi()
+    {
+        var cachedFlags = new FlareEvaluateAllResponse
+        {
+            Flags = new List<FlagEvaluationResponse>
+            {
+                new() { FlagKey = "feature-x", Value = false, Variant = "off", Reason = "STATIC" }
+            }
+        };
+        _apiClient.EvaluateAllAsync(Arg.Any<FlareEvaluationContext>(), Arg.Any<CancellationToken>())
+            .Returns(cachedFlags);
+
+        var apiResponse = new FlagEvaluationResponse
+        {
+            FlagKey = "feature-x",
+            Value = true,
+            Variant = "on",
+            Reason = "STATIC"
+        };
+        _apiClient.EvaluateAsync("feature-x", Arg.Any<FlareEvaluationContext>(), Arg.Any<CancellationToken>())
+            .Returns(apiResponse);
+
+        var provider = CreateProvider();
+        await provider.InitializeAsync(EvaluationContext.Builder().Build());
+
+        var emptyContext = EvaluationContext.Builder().Build();
+        var result = await provider.ResolveBooleanValueAsync("feature-x", false, emptyContext);
+
+        result.Value.Should().BeTrue();
+        await _apiClient.Received(1).EvaluateAsync(
+            "feature-x",
+            Arg.Any<FlareEvaluationContext>(),
+            Arg.Any<CancellationToken>());
+
+        await provider.ShutdownAsync();
+    }
+
+    [Fact]
+    public async Task ResolveBooleanValue_CachingEnabled_WithoutContext_UsesCacheAndDoesNotCallApi()
+    {
+        var cachedFlags = new FlareEvaluateAllResponse
+        {
+            Flags = new List<FlagEvaluationResponse>
+            {
+                new() { FlagKey = "feature-x", Value = false, Variant = "off", Reason = "STATIC" }
+            }
+        };
+        _apiClient.EvaluateAllAsync(Arg.Any<FlareEvaluationContext>(), Arg.Any<CancellationToken>())
+            .Returns(cachedFlags);
+
+        var provider = CreateProvider();
+        await provider.InitializeAsync(EvaluationContext.Builder().Build());
+
+        var result = await provider.ResolveBooleanValueAsync("feature-x", true);
+
+        result.Value.Should().BeFalse();
+        result.Reason.Should().Be(Reason.Cached);
+        await _apiClient.DidNotReceive().EvaluateAsync(
+            Arg.Any<string>(),
+            Arg.Any<FlareEvaluationContext>(),
+            Arg.Any<CancellationToken>());
+
+        await provider.ShutdownAsync();
+    }
+
+    #endregion
+
     #region EvaluationContext Forwarding
 
     [Fact]

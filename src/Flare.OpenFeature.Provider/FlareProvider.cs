@@ -90,7 +90,9 @@ public sealed class FlareProvider : FeatureProvider
         bool defaultValue,
         EvaluationContext? context = null,
         CancellationToken cancellationToken = default)
-        => ResolveAsync(flagKey, defaultValue, context, cancellationToken, ExtractBool);
+    { 
+        return ResolveAsync(flagKey, defaultValue, context, cancellationToken, ExtractBool);
+    }
 
     public override Task<ResolutionDetails<string>> ResolveStringValueAsync(
         string flagKey,
@@ -129,7 +131,7 @@ public sealed class FlareProvider : FeatureProvider
         CancellationToken cancellationToken,
         Func<FlagEvaluationResponse, T> extract)
     {
-        if (_providerOptions.CachingEnabled && !_cache.IsEmpty)
+        if (_providerOptions.CachingEnabled && !_cache.IsEmpty && context == null)
         {
             var cacheKey = FlagCache.BuildKey(_options.Scope, flagKey);
             if (_cache.TryGetFlag(cacheKey, out var cached))
