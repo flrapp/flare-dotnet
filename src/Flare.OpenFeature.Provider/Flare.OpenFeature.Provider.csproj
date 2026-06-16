@@ -27,7 +27,7 @@
     <PackageReference Include="System.Net.Http" />
     <PackageReference Include="System.Text.Json" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <ProjectReference Include="..\Flare.HttpClient\Flare.HttpClient.csproj" />
+    <PackageReference Include="Flare.HttpClient" VersionOverride="10.2.0"/>
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\"/>
